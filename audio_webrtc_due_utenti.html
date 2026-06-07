@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audio tra due utenti - WebRTC</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel2: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #38bdf8;
+      --ok: #22c55e;
+      --bad: #ef4444;
+      --border: #334155;
+      --button: #2563eb;
+      --button2: #475569;
+    }
+    body.light {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --panel2: #eef2ff;
+      --text: #111827;
+      --muted: #4b5563;
+      --accent: #0369a1;
+      --ok: #15803d;
+      --bad: #b91c1c;
+      --border: #cbd5e1;
+      --button: #2563eb;
+      --button2: #64748b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(circle at top, rgba(56,189,248,.18), transparent 35%), var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 18px;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: clamp(1.5rem, 4vw, 2.2rem); }
+    .subtitle { color: var(--muted); margin-bottom: 18px; line-height: 1.45; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: rgba(17,24,39,.92);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 14px 35px rgba(0,0,0,.20);
+    }
+    .card h2 { margin: 0 0 10px; font-size: 1.1rem; }
+    .step { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #00111c; font-weight: 800; margin-right: 8px; }
+    textarea, input {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--panel2);
+      color: var(--text);
+      padding: 12px;
+      font-size: .95rem;
+      outline: none;
+    }
+    textarea { min-height: 155px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    input { margin: 6px 0 12px; }
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 11px 14px;
+      margin: 5px 5px 5px 0;
+      color: white;
+      background: var(--button);
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .05s ease, opacity .2s ease;
+    }
+    button:hover { opacity: .92; }
+    button:active { transform: scale(.99); }
+    button.secondary { background: var(--button2); }
+    button.danger { background: var(--bad); }
+    button.good { background: var(--ok); }
+    .status {
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--panel2);
+      margin: 12px 0;
+      line-height: 1.45;
+    }
+    .small { font-size: .92rem; color: var(--muted); line-height: 1.45; }
+    .badge { display: inline-block; padding: 4px 9px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--border); color: var(--muted); font-size: .85rem; }
+    .audio-box { margin-top: 10px; }
+    audio { width: 100%; margin-top: 8px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .topbar { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 10px; }
+    .hidden { display: none; }
+    .copyNotice { color: var(--ok); font-size: .9rem; min-height: 1.2rem; }
+    ol { padding-left: 1.4rem; }
+    li { margin-bottom: 8px; }
+    code { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h1>Chiamata audio tra due utenti</h1>
+        <div class="subtitle">File HTML singolo, senza registrazione. Lo scambio iniziale dei codici può avvenire con Gmail, WhatsApp, SMS o qualsiasi altro canale.</div>
+      </div>
+      <button class="secondary" id="themeBtn">Tema chiaro/scuro</button>
+    </div>
+
+    <div class="card">
+      <h2>Stato</h2>
+      <div id="status" class="status">Pronto. Scegli chi inizia la chiamata.</div>
+      <div class="row">
+        <span class="badge" id="micBadge">Microfono: non attivo</span>
+        <span class="badge" id="connBadge">Connessione: non avviata</span>
+      </div>
+      <div class="audio-box">
+        <strong>Audio remoto</strong>
+        <audio id="remoteAudio" autoplay playsinline controls></audio>
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:16px;">
+      <div class="card">
+        <h2><span class="step">1</span>Utente A: crea invito</h2>
+        <p class="small">Chi avvia la chiamata preme il pulsante qui sotto, copia il codice invito e lo invia all'altra persona.</p>
+        <button id="startBtn" class="good">Sono l'utente A: crea invito</button>
+        <button id="copyOfferBtn" class="secondary">Copia invito</button>
+        <div id="offerCopyNotice" class="copyNotice"></div>
+        <textarea id="offerBox" placeholder="Qui comparirà il codice invito da inviare all'utente B"></textarea>
+      </div>
+
+      <div class="card">
+        <h2><span class="step">2</span>Utente B: riceve invito e crea risposta</h2>
+        <p class="small">L'utente B incolla qui il codice ricevuto dall'utente A, poi genera il codice risposta e lo rimanda all'utente A.</p>
+        <textarea id="incomingOfferBox" placeholder="Utente B: incolla qui il codice invito ricevuto"></textarea>
+        <button id="answerBtn" class="good">Sono l'utente B: crea risposta</button>
+        <button id="copyAnswerBtn" class="secondary">Copia risposta</button>
+        <div id="answerCopyNotice" class="copyNotice"></div>
+        <textarea id="answerBox" placeholder="Qui comparirà il codice risposta da rimandare all'utente A"></textarea>
+      </div>
+
+      <div class="card">
+        <h2><span class="step">3</span>Utente A: incolla risposta</h2>
+        <p class="small">Quando l'utente A riceve il codice risposta dall'utente B, lo incolla qui e completa il collegamento.</p>
+        <textarea id="incomingAnswerBox" placeholder="Utente A: incolla qui il codice risposta ricevuto"></textarea>
+        <button id="connectBtn" class="good">Completa collegamento</button>
+      </div>
+
+      <div class="card">
+        <h2>Comandi chiamata</h2>
+        <button id="muteBtn" class="secondary">Disattiva microfono</button>
+        <button id="hangupBtn" class="danger">Chiudi chiamata</button>
+        <p class="small">
+          Nota: per motivi di sicurezza il microfono funziona solo su <code>https://</code>, oppure aprendo il file come <code>localhost</code>. Su alcuni browser Android può funzionare anche aprendo direttamente il file, ma non è garantito.
+        </p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h2>Istruzioni rapide</h2>
+      <ol class="small">
+        <li>Entrambi aprono lo stesso file HTML.</li>
+        <li>L'utente A preme <strong>crea invito</strong> e invia il codice all'utente B.</li>
+        <li>L'utente B incolla l'invito, preme <strong>crea risposta</strong> e rimanda il codice all'utente A.</li>
+        <li>L'utente A incolla la risposta e preme <strong>completa collegamento</strong>.</li>
+        <li>Quando il browser chiede il permesso, bisogna consentire l'uso del microfono.</li>
+      </ol>
+    </div>
+  </div>
+
+<script>
+let pc;
+let localStream;
+let muted = false;
+
+const $ = id => document.getElementById(id);
+const statusEl = $('status');
+const micBadge = $('micBadge');
+const connBadge = $('connBadge');
+const remoteAudio = $('remoteAudio');
+
+const config = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
+
+function setStatus(msg) { statusEl.textContent = msg; }
+function setConn(msg) { connBadge.textContent = 'Connessione: ' + msg; }
+function setMic(msg) { micBadge.textContent = 'Microfono: ' + msg; }
+
+async function ensureMic() {
+  if (!localStream) {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    setMic('attivo');
+  }
+  return localStream;
+}
+
+function createPeerConnection() {
+  pc = new RTCPeerConnection(config);
+
+  pc.ontrack = event => {
+    remoteAudio.srcObject = event.streams[0];
+    setStatus('Audio remoto ricevuto. La chiamata dovrebbe essere attiva.');
+  };
+
+  pc.onconnectionstatechange = () => {
+    setConn(pc.connectionState);
+    if (pc.connectionState === 'connected') setStatus('Collegamento stabilito. Potete parlare.');
+    if (pc.connectionState === 'failed') setStatus('Connessione fallita. Riprovare: spesso dipende da rete, firewall o NAT restrittivo.');
+    if (pc.connectionState === 'disconnected') setStatus('Connessione interrotta o instabile.');
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === 'checking') setStatus('Sto cercando il percorso di rete migliore...');
+  };
+
+  return pc;
+}
+
+async function waitForIceGatheringComplete(pc) {
+  if (pc.iceGatheringState === 'complete') return;
+  await new Promise(resolve => {
+    function check() {
+      if (pc.iceGatheringState === 'complete') {
+        pc.removeEventListener('icegatheringstatechange', check);
+        resolve();
+      }
+    }
+    pc.addEventListener('icegatheringstatechange', check);
+    setTimeout(resolve, 6000); // evita attese infinite
+  });
+}
+
+function encodeDescription(desc) {
+  return btoa(unescape(encodeURIComponent(JSON.stringify(desc))));
+}
+function decodeDescription(text) {
+  return JSON.parse(decodeURIComponent(escape(atob(text.trim()))));
+}
+
+async function startAsCaller() {
+  try {
+    setStatus('Richiesta permesso microfono...');
+    const stream = await ensureMic();
+    createPeerConnection();
+    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    setStatus('Creazione codice invito...');
+    await waitForIceGatheringComplete(pc);
+    $('offerBox').value = encodeDescription(pc.localDescription);
+    setStatus('Invito creato. Copialo e invialo all’utente B.');
+    setConn('invito creato');
+  } catch (err) {
+    setStatus('Errore: ' + err.message);
+  }
+}
+
+async function answerAsReceiver() {
+  try {
+    const offerText = $('incomingOfferBox').value.trim();
+    if (!offerText) { setStatus('Incolla prima il codice invito ricevuto.'); return; }
+    setStatus('Richiesta permesso microfono...');
+    const stream = await ensureMic();
+    createPeerConnection();
+    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+    const offer = decodeDescription(offerText);
+    await pc.setRemoteDescription(offer);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    setStatus('Creazione codice risposta...');
+    await waitForIceGatheringComplete(pc);
+    $('answerBox').value = encodeDescription(pc.localDescription);
+    setStatus('Risposta creata. Copiala e rimandala all’utente A.');
+    setConn('risposta creata');
+  } catch (err) {
+    setStatus('Errore: codice invito non valido oppure microfono non disponibile. Dettagli: ' + err.message);
+  }
+}
+
+async function connectCaller() {
+  try {
+    if (!pc) { setStatus('Prima devi creare l’invito come utente A.'); return; }
+    const answerText = $('incomingAnswerBox').value.trim();
+    if (!answerText) { setStatus('Incolla prima il codice risposta ricevuto.'); return; }
+    const answer = decodeDescription(answerText);
+    await pc.setRemoteDescription(answer);
+    setStatus('Risposta accettata. Attendo stabilizzazione del collegamento...');
+    setConn('in collegamento');
+  } catch (err) {
+    setStatus('Errore: codice risposta non valido. Dettagli: ' + err.message);
+  }
+}
+
+async function copyText(id, noticeId) {
+  const text = $(id).value;
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    $(noticeId).textContent = 'Copiato negli appunti.';
+    setTimeout(() => $(noticeId).textContent = '', 2200);
+  } catch {
+    $(noticeId).textContent = 'Copia manualmente il testo.';
+  }
+}
+
+function toggleMute() {
+  if (!localStream) { setStatus('Il microfono non è ancora attivo.'); return; }
+  muted = !muted;
+  localStream.getAudioTracks().forEach(t => t.enabled = !muted);
+  $('muteBtn').textContent = muted ? 'Riattiva microfono' : 'Disattiva microfono';
+  setMic(muted ? 'disattivato' : 'attivo');
+}
+
+function hangup() {
+  if (pc) pc.close();
+  pc = null;
+  if (localStream) {
+    localStream.getTracks().forEach(t => t.stop());
+    localStream = null;
+  }
+  remoteAudio.srcObject = null;
+  setStatus('Chiamata chiusa. Puoi ricaricare la pagina per ricominciare in modo pulito.');
+  setConn('chiusa');
+  setMic('non attivo');
+}
+
+$('startBtn').addEventListener('click', startAsCaller);
+$('answerBtn').addEventListener('click', answerAsReceiver);
+$('connectBtn').addEventListener('click', connectCaller);
+$('copyOfferBtn').addEventListener('click', () => copyText('offerBox', 'offerCopyNotice'));
+$('copyAnswerBtn').addEventListener('click', () => copyText('answerBox', 'answerCopyNotice'));
+$('muteBtn').addEventListener('click', toggleMute);
+$('hangupBtn').addEventListener('click', hangup);
+$('themeBtn').addEventListener('click', () => document.body.classList.toggle('light'));
+</script>
+</body>
+</html>
